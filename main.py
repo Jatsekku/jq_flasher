@@ -28,7 +28,7 @@ class BLUart:
         logging.debug(f"Data length {len(data)} , Data to send: {data}")
         self.device.write(data)
 
-    def wait_for_response(self, timeout=1):
+    def wait_for_response(self, timeout=2):
         logging.debug(f"Timeout: {timeout}")
         self.device.timeout = timeout
         len = self.device.in_waiting
@@ -57,7 +57,6 @@ class UartProtocol:
             'xip_read_start' : b'\x60',
             'flash_xip_readsha' : b'\x3E',
             'xip_read_finish' : b'\x61',
-
         }
 
     @staticmethod
@@ -106,7 +105,7 @@ class UartProtocol:
         logging.info("LoadBootHeader Command")
         if len(boot_header) != 176:
             return None #exception
-        command = self.cmd_id['load_boot_header'] + b'\x00\xb0\x00' + boot_header
+        command = self.cmd_id['load_boot_header'] + b'\x00\xB0\x00' + boot_header
         response = self.send_data_wait_for_response(command)
         return self.is_response_ok(response)
 
@@ -155,7 +154,8 @@ class UartProtocol:
         data = b'\x08\x00' + start_addr.to_bytes(4, 'little') + end_addr.to_bytes(4, 'little')
         checksum = self.calc_checksum(data)
         command = self.cmd_id['flash_erase'] + checksum.to_bytes(1, 'little') + data
-        response = self.send_data_wait_for_response(command)
+        #This operation take some time to confirm success, so delay is a bit higher
+        response = self.send_data_wait_for_response(command, 0.5)
         return self.is_response_ok(response)
 
     def flash_write(self, start_addr, payload):
@@ -173,16 +173,23 @@ class UartProtocol:
         logging.info("FlashWriteCheck Command")
         command = self.cmd_id['flash_write_check'] + b'\x00\x00\x00'
         response = self.send_data_wait_for_response(command)
+        return self.is_response_ok(response)
 
     def xip_read_start(self):
+        logging.info("XipReadStart Command")
         command = self.cmd_id['xip_read_start'] + b'\x00\x00\x00'
         response = self.send_data_wait_for_response(command)
+        return self.is_response_ok(response)
 
-    def flash_xip_readsha(self):
-        #?????????????????????????????
-        pass
+    def flash_xip_readsha(self, unknown):
+        logging.info("XipReadSha Command")
+        command = self.cmd_id['flash_xip_readsha'] + unknown
+        response = self.send_data_wait_for_response(command)
+        if self.is_response_ok(response):
+            return response[2:]
 
     def xip_read_finish(self):
+        logging.info("XipReadFinish Command")
         command = self.cmd_id['xip_read_finish'] + b'\x00\x00\x00'
         response = self.send_data_wait_for_response(command)
 
@@ -192,6 +199,15 @@ class UartProtocol:
         while len(data) > 0:
             self.load_segment_data(data)
             data = file.read(4080)
+
+    def flash_write_full(self, start_addr, file):
+        logging.info("FlashWriteFull Procedure")
+        data = file.read(2048)
+        while len(data) > 0:
+            self.flash_write(start_addr, data)
+            start_addr = start_addr + len(data)
+            data = file.read(2048)
+
 
 
 
@@ -223,8 +239,8 @@ def main():
     uart_proto.check_image()
 
     #Unknown operation ??????????
-    uart_proto.memory_write(b'\x00\xf1\x00\x40\x45\x48\x42\x4E')
-    uart_proto.memory_write(b'\x04\xf1\x00\x40\x00\x00\x01\x22')
+    uart_proto.memory_write(b'\x00\xF1\x00\x40\x45\x48\x42\x4E')
+    uart_proto.memory_write(b'\x04\xF1\x00\x40\x00\x00\x01\x22')
     uart_proto.memory_write(b'\x18\x00\x00\x40\x02\x00\x00\x00')
     time.sleep(0.15)
 
@@ -241,6 +257,41 @@ def main():
     #FlashWrite
     file = open('bootinfo.bin', 'rb')
     uart_proto.flash_write(0x0000, file.read(176))
+    file.close()
+
+    #FlashWriteCheck
+    uart_proto.flash_write_check()
+
+    #XipReadStart
+    uart_proto.xip_read_start()
+
+    #Unknown operation ??????????
+    sha = uart_proto.flash_xip_readsha(b'\xB8\x08\x00\x00\x00\x00\x00\xB0\x00\x00\x00')
+    logging.info(f"FlashXipReadSha response: {sha}")
+
+    #XipReadStart
+    uart_proto.xip_read_finish()
+
+    #FlashErase
+    uart_proto.flash_erase(0x2000, 0x75BF)
+
+    #FlashWrite
+    file = open('img.bin', 'rb')
+    uart_proto.flash_write_full(0x2000, file)
+    file.close()
+
+    #FlashWriteCheck
+    uart_proto.flash_write_check()
+
+    #XipReadStart
+    uart_proto.xip_read_finish()
+
+    #Unknown operation ??????????
+    sha = uart_proto.flash_xip_readsha(b'\x3D\x08\x00\x00\x20\x00\x00\xC0\x55\x00\x00')
+    logging.info(f"FlashXipReadSha response: {sha}")
+
+    #XipReadStart
+    uart_proto.xip_read_finish()
 
 
 
