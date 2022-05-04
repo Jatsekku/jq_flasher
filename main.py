@@ -239,7 +239,7 @@ class UartProtocol:
             self.load_segment_data(data)
             data = file.read(4080)
 
-    def flash_write_full(self, start_addr, file):
+    def flash_write_all(self, start_addr, file):
         logging.info("FlashWriteFull Procedure")
         data = file.read(2048)
         while len(data) > 0:
@@ -319,11 +319,11 @@ def main():
     start_addr = 0x2000
     end_addr = 0x2000 + bin_size - 1
     logging.info(f"Binary size: {bin_size}, start {start_addr}, end {end_addr}")
-    uart_proto.flash_erase(0x2000, end_addr)
+    uart_proto.flash_erase(start_addr, end_addr)
 
     #FlashWrite
     file = open(path + 'chips/bl702/img_create_mcu/img.bin', 'rb')
-    uart_proto.flash_write_full(0x2000, file)
+    uart_proto.flash_write_all(start_addr, file)
     file.close()
 
     #FlashWriteCheck
