@@ -1,10 +1,12 @@
 import logging
 import serial
 import time
+import os
 import bl_errors
 
 # Notes
 # bytes(dlen) may be tricky !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
 
 
 def config_logging(level = logging.DEBUG):
@@ -16,13 +18,26 @@ def config_logging(level = logging.DEBUG):
 class BLUart:
     def __init__(self,
                  port = '/dev/ttyUSB0',
-                 baudrate = 500_000):
+                 baudrate = 500_000,
+                 rtscts = False,
+                 dsrdtr = False):
+
+        self.boot_pin = 'RTS'
+        self.boot_inverted = True
+        self.enable_pin = 'DTR'
+        self.enable_inverted = True
+
         self.device = serial.Serial(port,
                                     baudrate,
                                     bytesize = serial.EIGHTBITS,
                                     parity = serial.PARITY_NONE,
                                     stopbits = serial.STOPBITS_ONE,
                                     timeout = 2)
+
+        self.pin_switcher = {
+            'RTS' : self.device.setRTS,
+            'DTR' : self.device.setDTR
+        }
 
     def send_data(self, data):
         logging.debug(f"Data length {len(data)} , Data to send: {data}")
@@ -38,6 +53,30 @@ class BLUart:
         data = self.device.read(len)
         logging.debug(f"Received data: {data}")
         return data
+
+    def set_enable(self, value):
+        logging.debug(f"Enable pin state: {value}")
+        if self.enable_pin:
+            value = not value
+        self.pin_switcher[self.enable_pin](value)
+
+    def set_boot(self, value):
+        logging.debug(f"Boot pin state: {value}")
+        if self.boot_pin:
+            value = not value
+        self.pin_switcher[self.boot_pin](value)
+
+    def enter_bootloader(self):
+        logging.info("Entering bootloader.")
+        self.set_boot(True)
+        self.set_enable(True)
+        time.sleep(1)
+
+        self.set_enable(False)
+        time.sleep(0.5)
+        self.set_enable(True)
+
+        time.sleep(1)
 
 class UartProtocol:
     def __init__(self, interface):
@@ -155,7 +194,7 @@ class UartProtocol:
         checksum = self.calc_checksum(data)
         command = self.cmd_id['flash_erase'] + checksum.to_bytes(1, 'little') + data
         #This operation take some time to confirm success, so delay is a bit higher
-        response = self.send_data_wait_for_response(command, 0.5)
+        response = self.send_data_wait_for_response(command, 5)
         return self.is_response_ok(response)
 
     def flash_write(self, start_addr, payload):
@@ -212,10 +251,13 @@ class UartProtocol:
 
 
 def main():
+    path = '/home/jatsekku/Documents/bl_mcu_sdk/tools/bflb_flash_tool/'
+
     config_logging()
     bl_uart = BLUart()
     uart_proto = UartProtocol(bl_uart)
 
+    bl_uart.enter_bootloader()
     #Handshake
     uart_proto.handshake()
 
@@ -224,7 +266,7 @@ def main():
     logging.info(f"GetBootInfo response: {boot_info}")
 
     #LoadBootHeader
-    file = open('eflash_loader_32m.bin', 'rb')
+    file = open(path + 'chips/bl702/eflash_loader/eflash_loader_32m.bin', 'rb')
     uart_proto.load_boot_header(file.read(176))
 
     #LoadSegmentHeader
@@ -255,7 +297,7 @@ def main():
     uart_proto.flash_erase(0x0000, 0x00AF)
 
     #FlashWrite
-    file = open('bootinfo.bin', 'rb')
+    file = open(path + 'chips/bl702/img_create_mcu/bootinfo.bin', 'rb')
     uart_proto.flash_write(0x0000, file.read(176))
     file.close()
 
@@ -273,10 +315,14 @@ def main():
     uart_proto.xip_read_finish()
 
     #FlashErase
-    uart_proto.flash_erase(0x2000, 0x75BF)
+    bin_size = os.path.getsize(path + 'chips/bl702/img_create_mcu/img.bin')
+    start_addr = 0x2000
+    end_addr = 0x2000 + bin_size - 1
+    logging.info(f"Binary size: {bin_size}, start {start_addr}, end {end_addr}")
+    uart_proto.flash_erase(0x2000, end_addr)
 
     #FlashWrite
-    file = open('img.bin', 'rb')
+    file = open(path + 'chips/bl702/img_create_mcu/img.bin', 'rb')
     uart_proto.flash_write_full(0x2000, file)
     file.close()
 
