@@ -4,11 +4,6 @@ import time
 import os
 import bl_errors
 
-# Notes
-# bytes(dlen) may be tricky !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-
-
 def config_logging(level = logging.DEBUG):
     format = '%(levelname)s | %(asctime)s | %(filename)s:%(lineno)s' \
              '| %(funcName)s() | %(message)s'
@@ -19,66 +14,107 @@ class BLUart:
     def __init__(self,
                  port = '/dev/ttyUSB0',
                  baudrate = 500_000,
-                 rtscts = False,
-                 dsrdtr = False):
+                 boot_pin = 'RTS',
+                 boot_pin_inverted = True,
+                 enable_pin = 'DTR',
+                 enable_pin_inverted = True):
 
-        self.boot_pin = 'RTS'
-        self.boot_inverted = True
-        self.enable_pin = 'DTR'
-        self.enable_inverted = True
+        # Config and open serial connection
+        self.uart = serial.Serial(port,
+                                  baudrate,
+                                  bytesize = serial.EIGHTBITS,
+                                  parity = serial.PARITY_NONE,
+                                  stopbits = serial.STOPBITS_ONE,
+                                  timeout = 2)
 
-        self.device = serial.Serial(port,
-                                    baudrate,
-                                    bytesize = serial.EIGHTBITS,
-                                    parity = serial.PARITY_NONE,
-                                    stopbits = serial.STOPBITS_ONE,
-                                    timeout = 2)
+        # Define boot/enable GPIO connections
+        self.boot_pin = boot_pin
+        self.boot_pin_inverted = boot_pin_inverted
+        self.enable_pin = enable_pin
+        self.enable_pin_inverted = enable_pin_inverted
 
         self.pin_switcher = {
-            'RTS' : self.device.setRTS,
-            'DTR' : self.device.setDTR
+            'RTS' : self.uart.setRTS,
+            'DTR' : self.uart.setDTR
         }
 
     def send_data(self, data):
+        """
+        Send data over UART
+
+        Parameters:
+            data (bytearray): Data to sent
+        """
+
         logging.debug(f"Data length {len(data)} , Data to send: {data}")
-        self.device.write(data)
+        self.uart.write(data)
 
     def wait_for_response(self, timeout=2):
+        """
+        Wait for incoming data on UART interface
+
+        Parameters:
+            timeout (float): Desired timeout, given in seconds
+
+        Returns:
+            bytearray: Data received from UART
+        """
+
         logging.debug(f"Timeout: {timeout}")
-        self.device.timeout = timeout
-        len = self.device.in_waiting
+        self.uart.timeout = timeout
+        len = self.uart.in_waiting
         logging.debug(f"Waiting data amount = {len}")
         if len == 0:
             len = 1
-        data = self.device.read(len)
+        data = self.uart.read(len)
         logging.debug(f"Received data: {data}")
         return data
 
-    def set_enable(self, value):
-        logging.debug(f"Enable pin state: {value}")
-        if self.enable_pin:
-            value = not value
-        self.pin_switcher[self.enable_pin](value)
+    def enable_pin_set(self, state):
+        """
+        Put ENABLE pin into given state
 
-    def set_boot(self, value):
-        logging.debug(f"Boot pin state: {value}")
-        if self.boot_pin:
-            value = not value
+        Parameters:
+            state (boolean): Desired state of ENABLE pin
+        """
+
+        state_str = "HIGH" if state else "LOW"
+        logging.debug(f"Enable pin state: {state_str}")
+        if self.enable_pin_inverted:
+            state = not state
+        self.pin_switcher[self.enable_pin](state)
+
+    def boot_pin_set(self, value):
+        """
+        Put BOOT pin into given state
+
+        Parameters:
+            state (boolean): Desired state of BOOT pin
+        """
+
+        state_str = "HIGH" if state else "LOW"
+        logging.debug(f"Boot pin state: {state_str}")
+        if self.boot_pin_inverted:
+            state = not state
         self.pin_switcher[self.boot_pin](value)
 
     def enter_bootloader(self):
+        """
+        Put MCU into bootloader mode
+        """
+
         logging.info("Entering bootloader.")
-        self.set_boot(True)
-        self.set_enable(True)
+        self.boot_pin_set(True)
+        self.enable_pin_set(True)
         time.sleep(1)
 
-        self.set_enable(False)
+        self.enable_pin_set(False)
         time.sleep(0.5)
-        self.set_enable(True)
+        self.enable_pin_set(True)
 
         time.sleep(1)
 
-class UartProtocol:
+class BLProtocol:
     def __init__(self, interface):
         self.interface = interface
         self.cmd_id = {
@@ -100,6 +136,13 @@ class UartProtocol:
 
     @staticmethod
     def is_response_ok(response):
+        """
+        Check MCU's response
+
+        Parameters:
+            response (bytearray): MCU response data
+        """
+        
         logging.debug(f"Response: {response}")
         if response is None or len(response) < 2:
             raise bl_errors.InvalidResponseError()
@@ -129,7 +172,7 @@ class UartProtocol:
 
     def handshake(self):
         logging.info("Handshake Command")
-        command = self.cmd_id['handshake'] * int(0.006 * (self.interface.device.baudrate / 10))
+        command = self.cmd_id['handshake'] * int(0.006 * (self.interface.uart.baudrate / 10))
         response = self.send_data_wait_for_response(command)
         return self.is_response_ok(response)
 
@@ -266,11 +309,7 @@ def main():
     logging.info(f"GetBootInfo response: {boot_info}")
 
     #LoadBootHeader
-<<<<<<< HEAD
-    file = open(path + 'chips/bl702/eflash_loader/eflash_loader_32m.bin', 'rb')
-=======
     file = open('../chips/bl702/eflash_loader/eflash_loader_32m.bin', 'rb')
->>>>>>> d5b19be (Unknown state)
     uart_proto.load_boot_header(file.read(176))
 
     #LoadSegmentHeader
@@ -301,11 +340,7 @@ def main():
     uart_proto.flash_erase(0x0000, 0x00AF)
 
     #FlashWrite
-<<<<<<< HEAD
-    file = open(path + 'chips/bl702/img_create_mcu/bootinfo.bin', 'rb')
-=======
-    file = open('../chips/bl702/img_create_mcu/bootinfo.bin, 'rb')
->>>>>>> d5b19be (Unknown state)
+    file = open('../chips/bl702/img_create_mcu/bootinfo.bin', 'rb')
     uart_proto.flash_write(0x0000, file.read(176))
     file.close()
 
@@ -330,13 +365,8 @@ def main():
     uart_proto.flash_erase(start_addr, end_addr)
 
     #FlashWrite
-<<<<<<< HEAD
     file = open(path + 'chips/bl702/img_create_mcu/img.bin', 'rb')
     uart_proto.flash_write_all(start_addr, file)
-=======
-    file = open('../chips/bl702/img_create_mcu/img.bin', 'rb')
-    uart_proto.flash_write_full(0x2000, file)
->>>>>>> d5b19be (Unknown state)
     file.close()
 
     #FlashWriteCheck
