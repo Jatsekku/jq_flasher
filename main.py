@@ -266,7 +266,11 @@ def main():
     logging.info(f"GetBootInfo response: {boot_info}")
 
     #LoadBootHeader
+<<<<<<< HEAD
     file = open(path + 'chips/bl702/eflash_loader/eflash_loader_32m.bin', 'rb')
+=======
+    file = open('../chips/bl702/eflash_loader/eflash_loader_32m.bin', 'rb')
+>>>>>>> d5b19be (Unknown state)
     uart_proto.load_boot_header(file.read(176))
 
     #LoadSegmentHeader
@@ -297,7 +301,11 @@ def main():
     uart_proto.flash_erase(0x0000, 0x00AF)
 
     #FlashWrite
+<<<<<<< HEAD
     file = open(path + 'chips/bl702/img_create_mcu/bootinfo.bin', 'rb')
+=======
+    file = open('../chips/bl702/img_create_mcu/bootinfo.bin, 'rb')
+>>>>>>> d5b19be (Unknown state)
     uart_proto.flash_write(0x0000, file.read(176))
     file.close()
 
@@ -322,8 +330,13 @@ def main():
     uart_proto.flash_erase(start_addr, end_addr)
 
     #FlashWrite
+<<<<<<< HEAD
     file = open(path + 'chips/bl702/img_create_mcu/img.bin', 'rb')
     uart_proto.flash_write_all(start_addr, file)
+=======
+    file = open('../chips/bl702/img_create_mcu/img.bin', 'rb')
+    uart_proto.flash_write_full(0x2000, file)
+>>>>>>> d5b19be (Unknown state)
     file.close()
 
     #FlashWriteCheck
