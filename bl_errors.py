@@ -1,7 +1,6 @@
 class BLBootProtocolError(Exception):
     pass
 
-
 class InvalidResponseError(BLBootProtocolError):
     pass
 
@@ -40,6 +39,19 @@ class ReadStatusRegError(FlashError):
 class WriteStatusRegError(FlashError):
     pass
 
+flash_errors_agreagator = [
+    InitError,
+    EraseParaError,
+    EraseError,
+    WriteParaError,
+    WriteAddrError,
+    WriteError,
+    BootParaError,
+    SetParaError,
+    ReadStatusRegError,
+    WriteStatusRegError,
+]
+
 # CMD error
 ################################################################################
 class CmdError(BLBootProtocolError):
@@ -56,6 +68,13 @@ class CrcError(CmdError):
 
 class SeqError(CmdError):
     pass
+
+cmd_errors_agreagator = [
+    IdError,
+    LenError,
+    CrcError,
+    SeqError,
+]
 
 ################################################################################
 # Image
@@ -91,3 +110,22 @@ class AesIvCrcError(ImgError):
 
 class PkLenError(ImgError):
     pass
+
+image_errors_agregator = [
+    BootHeaderLenError,
+    BootHeaderNotLoadError,
+    BootHeaderMagicError,
+    BootHeaderCrcError,
+    BootHeaderEncryptNotFitError,
+    BootHeaderSignNotFitError,
+    SegmentCntError,
+    AesIvLenError,
+    AesIvCrcError,
+    PkLenError,
+]
+
+errors_agregator = [
+    flash_errors_agreagator,
+    cmd_errors_agreagator,
+    image_errors_agregator,
+]
