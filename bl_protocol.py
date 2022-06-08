@@ -44,9 +44,10 @@ class BLProtocol:
             result = True
 
         if response[0:2] == b'FL':
-            err_lsb = response[0]
-            err_msb = response[1]
-            raise bl_errors.errors_agregator[err_msb][err_lsb]()
+            err_lsb = response[2]
+            err_msb = response[3]
+            logging.debug(f"err_msb: {err_msb}, err_lsb {err_lsb}")
+            raise bl_errors.errors_agregator[err_msb][err_lsb - 1]()
 
         return result
 

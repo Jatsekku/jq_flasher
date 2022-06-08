@@ -13,7 +13,7 @@ def config_logging(level = logging.DEBUG):
                         level = level)
 
 def main():
-
+    path = '/home/jatsekku/Documents/bl_mcu_sdk/tools/bflb_flash_tool/'
     config_logging(logging.DEBUG)
 
     args_parser = ArgsParser()
@@ -82,27 +82,27 @@ def main():
     sha = bl_proto.flash_xip_readsha(b'\xB8\x08\x00\x00\x00\x00\x00\xB0\x00\x00\x00')
     logging.info(f"FlashXipReadSha response: {sha}")
 
-    #XipReadFinish
+    #XipReadStart
     bl_proto.xip_read_finish()
 
-    img_path = args.firmware
     #FlashErase
+    img_path = '/home/jatsekku/Documents/bl_mcu_sdk/tools/bflb_flash_tool/chips/bl702/img_create_mcu/whole_img.bin'
     bin_size = os.path.getsize(img_path)
     start_addr = 0x2000
     end_addr = 0x2000 + bin_size - 1
     logging.info(f"Binary size: {bin_size}, start {start_addr}, end {end_addr}")
-    bl_proto.flash_erase(start_addr, end_addr)
+    bl_proto.flash_erase(0x2000, end_addr)
 
     #FlashWrite
-    file = open(args.firmware, 'rb')
-    bl_proto.flash_write_all(start_addr, file)
+    file = open(img_path, 'rb')
+    bl_proto.flash_write_all(0x2000, file)
     file.close()
 
     #FlashWriteCheck
     bl_proto.flash_write_check()
 
     #XipReadStart
-    bl_proto.xip_read_start()
+    bl_proto.xip_read_finish()
 
     #Unknown operation ??????????
     sha = bl_proto.flash_xip_readsha(b'\x3D\x08\x00\x00\x20\x00\x00\xC0\x55\x00\x00')
@@ -110,5 +110,4 @@ def main():
 
     #XipReadStart
     bl_proto.xip_read_finish()
-
 main()
