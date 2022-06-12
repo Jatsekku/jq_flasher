@@ -36,7 +36,8 @@ def main():
     boot_info = bl_proto.get_boot_info()
     logging.info(f"GetBootInfo response: {boot_info}")
 
-    #LoadBootHeader
+    # 1. The boot_header of eflash_loader (uart bootloader)
+    # is written to the MCU's RAM.
     file = open('eflash_loader_32m.bin', 'rb')
     bl_proto.load_boot_header(file.read(176))
 
@@ -110,4 +111,5 @@ def main():
 
     #XipReadStart
     bl_proto.xip_read_finish()
+    
 main()

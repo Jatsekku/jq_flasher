@@ -1,3 +1,10 @@
+"""This module provide a series of exception classes for bl_protocol.
+
+INFO(Jacek): I'm actually not sure if it's good idea to mark any possible value
+with new exception class. I will see, propbaly I will change that...
+
+"""
+
 class BLBootProtocolError(Exception):
     pass
 
