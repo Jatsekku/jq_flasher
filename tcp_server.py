@@ -9,46 +9,50 @@ CMDQUIT="QUIT"
 SEPARATOR="###"
 
 class server:
-    acceptedAddress=''
-    port=50000
-    conn=''
-    addr=''
-    socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM) #socket init
-    def __init__ (self, _address, _port):
-        self.acceptedAddress=_address
-        self.port=_port
-        self.socket.bind((self.acceptedAddress, self.port))
-    def __init__ (self): #default port and listening to all addresses. UNSAFE.
-        self.socket.bind((self.acceptedAddress, self.port))
-    def waitOnConnection (self):
+    def __init__ (self, address, port=50000):
+        self.accepted_address=address
+        self.port=port
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM) #socket init
+        self.socket.bind((self.accepted_address, self.port))
+  
+    def wait_on_connection (self):
         self.socket.listen(1) #make socket ready for incoming connections
-    def getCommand (self):
+
+    def get_command (self):
         self.conn, self.addr = self.socket.accept()
         msg=self.conn.recv(1024).decode('utf-8')
-        splited=msg.split(SEPARATOR)
-        cmd=splited[0]
-        arg1=splited[1]
-        arg2=splited[2]
-        arg3=splited[3]
+        splitted=msg.split(SEPARATOR)
+        cmd=splitted[0]
+        arg1=splitted[1]
+        arg2=splitted[2]
+        arg3=splitted[3]
         return cmd, arg1, arg2, arg3
-    def getFile (self, path, chunksAmount, chunkSize): #it will save the file to path
-        fileToWrite=open(path, 'wb')
-        for it in range (1,chunksAmount):
-            line = self.conn.recv(chunkSize)
-            while(line):
-                fileToWrite.write(line)
-                line=self.conn.recv(chunkSize)
+
+    def get_data (self, chunk_size):
+        self.conn, self.addr = self.socket.accept()
+        self.conn.recv(chunk_size)
         self.conn.close()
-        fileToWrite.close()
+    
+    def get_file (self, path, chunks_amount, chunk_size): #it will save the file to path
+        file_to_write=open(path, 'wb')
+        for it in range (1,chunks_amount):
+            line = self.conn.recv(chunk_size)
+            while(line):
+                file_to_write.write(line)
+                line=self.conn.recv(chunk_size)
+        self.conn.close()
+        file_to_write.close()
         return path
-    def closeSocket (self):
+
+    def close_socket (self):
         self.socket.close()
+
     def operate (self):
         while(True):
-            cmd, arg1, arg2, arg3 = self.getCommand()
+            cmd, arg1, arg2, arg3 = self.get_command()
             print (cmd)
             if cmd == CMDFILE:
-                print("File saved to path: " + self.getFile(arg1, int(arg2), int(arg3)))
+                print("File saved to path: " + self.get_file(arg1, int(arg2), int(arg3)))
             elif cmd == CMDSTRING:
                 print("Got string: " + arg1)
             elif cmd == CMDQUIT:
@@ -64,6 +68,6 @@ class server:
 #remark: currently it doesn't use any security mechanism. Will add key support later on.
             
 server=server()
-server.waitOnConnection()
+server.wait_on_connection()
 server.operate()
-server.closeSocket()
+server.close_socket()

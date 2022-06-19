@@ -9,45 +9,48 @@ CMDQUIT="QUIT"
 SEPARATOR="###"
 
 class client:
-    serverAddress=''
-    port=50000
-    buffersize=1024
-    socket=socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    def __init__ (self, _address, _port):
-        self.serverAddress=_address
-        self.port=_port
-    def __init__ (self, _address):
-        self.serverAddress=_address
-    def initConnection(self):
-        self.socket.connect((self.serverAddress, self.port))
-    def buildMsg (self, cmd, arg1, arg2, arg3):
+    def __init__(self, address, port=50000, buffersize=1024):
+        self.socket=socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_address=address
+        self.port=port
+
+    def init_connection(self):
+        self.socket.connect((self.server_address, self.port))
+
+    def build_msg (self, cmd, arg1, arg2, arg3):
         return cmd+SEPARATOR+arg1+SEPARATOR+arg2+SEPARATOR+arg3
-    def sendString(self, string):
-        cmd=self.buildMsg(CMDSTRING,string," "," ") #sending payload as arg1
+
+    def send_data(self, data):#bytes
+        self.socket.sendall(data)
+    
+    def send_string(self, string):
+        cmd=self.build_msg(CMDSTRING,string," "," ") #sending payload as arg1
         self.socket.sendall(cmd.encode('utf-8'))
-    def sendFile(self, filepath, serverFilename):
+
+    def send_file(self, filepath, server_filename):
         filetosend=open(filepath,'rb') #b is for binary
         filesize=os.path.getsize(filepath)
-        chunksAmount=str(math.ceil(filesize/self.buffersize))
-        cmd=self.buildMsg(CMDFILE,serverFilename,chunksAmount,str(self.buffersize))
-        print(cmd)
+        chunks_amount=str(math.ceil(filesize/self.buffersize))
+        cmd=self.build_msg(CMDFILE,server_filename,chunks_amount,str(self.buffersize))
         self.socket.sendall(cmd.encode('utf-8'))
         #file sending
         for it in tqdm(range(0, filesize, self.buffersize), desc="sending file"): #tqdm is for progress bar
             buff=filetosend.read(self.buffersize)
             self.socket.sendall(buff)    
-    def closeComm(self):
+
+    def close_comm(self):
         self.socket.shutdown(socket.SHUT_WR)
         self.socket.close()
-    def cmdCloseServer(self):
-        cmd=self.buildMsg(CMDQUIT," "," "," ")
+
+    def cmd_close_server(self):
+        cmd=self.build_msg(CMDQUIT," "," "," ")
         self.socket.sendall(cmd.encode('utf-8'))
 
 #example code:
 client=client('192.168.1.16')
-client.initConnection()
+client.init_connection()
 #after init, send command to a server. Uncomment one.
-#client.sendFile('testjpg.JPG', 'testSendingPicture2222.JPG')
-#client.sendString("string sending test")
-#client.cmdCloseServer()
-client.closeComm()
+#client.send_file('testjpg.JPG', 'testSendingPicture.JPG')
+#client.send_string("string sending test")
+#client.cmd_close_server()
+client.close_comm()
