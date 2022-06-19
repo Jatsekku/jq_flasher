@@ -1,8 +1,10 @@
 import configparser
 from ctypes import *
 import logging
+import zlib
 
 class SpiFlashCfg(Structure):
+# 84 bytes
     _fields_ = [
         ('io_mode',                         c_uint8),
         ('continuous_read_support',         c_uint8),
@@ -23,7 +25,7 @@ class SpiFlashCfg(Structure):
 
         ('sector_size',                     c_uint8),
         ('manufacturer_id',                 c_uint8),
-        ('page_size',                       c_uint8),
+        ('page_size',                       c_uint16),
 
         ('chip_erase_cmd',                  c_uint8),
         ('sector_erase_cmd',                c_uint8),
@@ -109,7 +111,7 @@ class SpiFlashCfg(Structure):
 
         ('sector_erase_time',               c_uint16),
         ('block32K_erase_time',             c_uint16),
-        ('block64K_erase_cmd',              c_uint16),
+        ('block64K_erase_time',             c_uint16),
         ('page_program_time',               c_uint16),
         ('chip_erase_time',                 c_uint16),
         ('release_power_down_delay',        c_uint8),
@@ -147,7 +149,7 @@ class SpiFlashCfg(Structure):
             'blk32k_erase_cmd'          : 'block32K_erase_cmd',
             'blk32k_erase_time'         : 'block32K_erase_time',
             'blk64k_erase_cmd'          : 'block64K_erase_cmd',
-            'blk64k_erase_time'         : 'block64K_erase_cmd',
+            'blk64k_erase_time'         : 'block64K_erase_time',
 
             # Program commands
             'page_prog_cmd'             : 'page_program_cmd',
@@ -267,18 +269,18 @@ class SpiFlashCfg(Structure):
 
 
 class BootFlashCfg(Structure):
+    # 92 bytes
     _fields_ = [
         ('magic_code', c_uint32),
         ('cfg',        SpiFlashCfg),
         ('crc32',      c_uint32),
     ]
 
-    def __init__(self, config_source, spi_flash_cfg):
+    def __init__(self, config_source):
         super().__init__()
         self.magic_code = int(config_source['flashcfg_magic_code'], 0)
-        self.cfg = spi_flash_cfg
-        #TODO(Jacek) it has to be calculated
-        self.crc32 = 0
+        self.cfg = SpiFlashCfg(config_source)
+        self.crc32 = zlib.crc32(self.cfg)
 
     def __repr__(self):
         rep_string = ''
@@ -289,6 +291,7 @@ class BootFlashCfg(Structure):
         return rep_string[:-1]
 
 class SysClkCfg(Structure):
+    #8 bytes
     _fields_ = [
         # TODO(Jacek): Can I make more sense of that ?
         ('xtal_type',       c_uint8),
@@ -297,37 +300,52 @@ class SysClkCfg(Structure):
         ('bclk_div',        c_uint8),
         ('flash_clk_type',  c_uint8),
         ('flash_clk_div',   c_uint8),
-        ('rsvd',            c_uint8 * 2),
+        ('rsvd1',           c_uint8),
+        ('rsvd1',           c_uint8),
     ]
 
     def __init__(self, config_source):
         super().__init__()
-        for key in self._fields_:
-            field_name = key[0]
-            field_value = int(config_source[field_name], 0)
-            # Prevent creating new attribiutes
-            if not hasattr(self, field_name):
-                logging.error(f" Structure do not have {field_name} field")
-                return
-            setattr(self, field_name, field_value)
+        self.xtal_type =      int(config_source['xtal_type'], 0)
+        self.pll_clk =        int(config_source['pll_clk'], 0)
+        self.hclk_div =       int(config_source['hclk_div'], 0)
+        self.bclk_div =       int(config_source['bclk_div'], 0)
+        self.flash_clk_type = int(config_source['flash_clk_type'], 0)
+        self.flash_clk_div =  int(config_source['flash_clk_div'], 0)
 
     def __repr__(self):
         rep_string = ''
         for field in self._fields_:
-            rep_string += f"{field[0]} = {getattr(self, field[0])} \n"
+            rep_string += f"{field[0]} = {getattr(self, field[0])}\n"
 
         # Cut off the last newline
         return rep_string[:-1]
 
 
 class BootClkCfg(Structure):
+    # 16 bytes
     _fields_ = [
         ('magic_code', c_uint32),
         ('cfg',        SysClkCfg),
         ('crc32',      c_uint32),
     ]
 
+    def __init__(self, config_source):
+        super().__init__()
+        self.magic_code = int(config_source['clkcfg_magic_code'], 0)
+        self.cfg = SysClkCfg(config_source)
+        self.crc32 = zlib.crc32(self.cfg)
+
+    def __repr__(self):
+        rep_string = ''
+        for field in self._fields_:
+            rep_string += f"{field[0]} = {getattr(self, field[0])}\n"
+
+        # Cut off the last newline
+        return rep_string[:-1]
+
 class BootCfgBits(Structure):
+    #4 bytes
     _fields_ = [
         # TODO(Jacek): Can I make more sense of that ?
         ('sign',                c_uint32, 2),
@@ -336,34 +354,81 @@ class BootCfgBits(Structure):
         ('rsvd1',               c_uint32, 2),
         ('no_segment',          c_uint32, 1),
         ('cache_select',        c_uint32, 1),
-        ('not_load_t_bootrom',  c_uint32, 1),
+        ('not_load_to_bootrom', c_uint32, 1),
         ('aes_region_lock',     c_uint32, 1),
         ('cache_way_disable',   c_uint32, 4),
         ('crc_ignore',          c_uint32, 1),
         ('hash_ignore',         c_uint32, 1),
-        ('halt_ap',             c_uint32, 1),
+        ('halt_cpu1',           c_uint32, 1),
         ('rsvd2',               c_uint32, 13),
     ]
 
+    def __init__(self, config_source):
+        super().__init__()
+        self.sign                = int(config_source['sign'], 0)
+        self.encrypt_type        = int(config_source['encrypt_type'], 0)
+        self.key_sel             = int(config_source['key_sel'], 0)
+        self.no_segment          = int(config_source['no_segment'], 0)
+        self.cache_select        = int(config_source['cache_enable'], 0)
+        self.not_load_to_bootrom = int(config_source['notload_in_bootrom'], 0)
+        self.aes_region_lock     = int(config_source['aes_region_lock'], 0)
+        self.cache_way_disable   = int(config_source['cache_way_disable'], 0)
+        self.crc_ignore          = int(config_source['crc_ignore'], 0)
+        self.hash_ignore         = int(config_source['hash_ignore'], 0)
+        #self.halt_cpu1           = int(config_source['halt_ap'], 0)
+
+    def __repr__(self):
+        rep_string = ''
+        for field in self._fields_:
+            rep_string += f"{field[0]} = {getattr(self, field[0])}\n"
+
+        # Cut off the last newline
+        return rep_string[:-1]
+
 class BootCfg(Union):
+    #4 bytes
     _fields_ = [
         ('bval', BootCfgBits),
         ('wval', c_uint32),
     ]
 
+    def __init__(self, config_source):
+        super().__init__()
+        self.bval = BootCfgBits(config_source)
+
+    def __repr__(self):
+        return repr(self.bval)
+
 class ImgSegmentInfo(Union):
+    #4 bytes
     _fields_ = [
         ('segment_cnt', c_uint32),
         ('img_len',     c_uint32),
     ]
 
+    def __init__(self, config_source):
+        super().__init__()
+        self.img_len = int(config_source['img_len'], 0)
+
+    def __repr__(self):
+        return f"segment_cnt/img_len = {self.segment_cnt}"
+
 class ImgStart(Union):
+    #4 bytes
     _fields_ = [
         ('ram_addr', c_uint32),
         ('flash_offset', c_uint32),
     ]
 
+    def __init__(self, config_source):
+        super().__init__()
+        self.ram_addr = int(config_source['img_start'], 0)
+
+    def __repr__(self):
+        return f"ram_addr/flash_offset = {self.ram_addr}"
+
 class BootHeader(Structure):
+    # 176 bytes
     _fields_ = [
         ('magic_code',          c_uint32),
         ('revision',            c_uint32),
@@ -373,11 +438,47 @@ class BootHeader(Structure):
         ('img_segment_info',    ImgSegmentInfo),
         ('boot_entry',          c_uint32),
         ('img_start',           ImgStart),
-        ('hash',                c_uint8 * 32),
-        ('rsvd1',               c_uint32),
-        ('rsvd2',               c_uint32),
+        ('hash0',               c_uint32),
+        ('hash1',               c_uint32),
+        ('hash2',               c_uint32),
+        ('hash3',               c_uint32),
+        ('hash4',               c_uint32),
+        ('hash5',               c_uint32),
+        ('hash6',               c_uint32),
+        ('hash7',               c_uint32),
+        ('boot2_pt_table_0',    c_uint32),
+        ('boot2_pt_table_1',    c_uint32),
         ('crc32',               c_uint32),
     ]
+
+    def __init__(self, config_source):
+        self.magic_code = int(config_source['magic_code'], 0)
+        self.revision = int(config_source['revision'], 0)
+        self.flash_cfg = BootFlashCfg(config_source)
+        self.clk_cfg = BootClkCfg(config_source)
+        self.boot_cfg = BootCfg(config_source)
+        self.img_segment_info = ImgSegmentInfo(config_source)
+        self.boot_entry = int(config_source['bootentry'], 0)
+        self.img_start = ImgStart(config_source)
+        self.hash0 = int(config_source['hash_0'], 0)
+        self.hash1 = int(config_source['hash_1'], 0)
+        self.hash2 = int(config_source['hash_2'], 0)
+        self.hash3 = int(config_source['hash_3'], 0)
+        self.hash4 = int(config_source['hash_4'], 0)
+        self.hash5 = int(config_source['hash_5'], 0)
+        self.hash6 = int(config_source['hash_6'], 0)
+        self.hash7 = int(config_source['hash_7'], 0)
+        self.boot2_pt_table_0 = int(config_source['boot2_pt_table_0'], 0)
+        self.boot2_pt_table_1 = int(config_source['boot2_pt_table_1'], 0)
+        self.crc32 = int(config_source['crc32'], 0)
+
+    def __repr__(self):
+        rep_string = ''
+        for field in self._fields_:
+            rep_string += f"{field[0]} = {getattr(self, field[0])}\n"
+
+        # Cut off the last newline
+        return rep_string[:-1]
 
 class BootInfo():
     def __init__(self, file):
@@ -385,20 +486,10 @@ class BootInfo():
         config.read(file)
 
         bootheader_cfg_source = config['BOOTHEADER_CFG']
-        self.__spi_flash_cfg = SpiFlashCfg(bootheader_cfg_source)
-        self.__boot_flash_cfg = BootFlashCfg(bootheader_cfg_source,
-                                             self.__spi_flash_cfg)
-        self.__sys_clk_cfg = SysClkCfg(bootheader_cfg_source)
+        self.bootheader = BootHeader(bootheader_cfg_source)
 
-        #print(self.__spi_flash_cfg)
-        #print(self.__boot_flash_cfg)
-        #print(self.__sys_clk_cfg)
-        #spi_flash_cfg.quad_enable_data = 0xFF
+    def get_bytes(self):
+        return bytes(self.bootheader)
 
-        #print(bytearray(spi_flash_cfg))
-        #print(spi_flash_cfg)
-
-
-        #print(config['BOOTHEADER_CFG']['magic_code'])
-
-boot_info = BootInfo('efuse_bootheader_cfg.conf')
+    def set_img_len(self, img_len):
+        self.bootheader.img_segment_info.img_len = img_len
