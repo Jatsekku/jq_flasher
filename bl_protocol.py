@@ -3,14 +3,19 @@ implementation Bbouffalolab's ISP protocol.
 
 """
 
-
 import time
 import logging
 import bl_errors
+import queue
+import threading
+
+rx_queue = queue.Queue()
 
 class BLProtocol:
     def __init__(self, interface):
         self.interface = interface
+        self.interface.register_rx_callback(self.rx_callback_handler)
+
         self.cmd_id = {
             'handshake' : b'\x55',
             'get_boot_info' : b'\x10',
@@ -26,7 +31,15 @@ class BLProtocol:
             'xip_read_start' : b'\x60',
             'flash_xip_readsha' : b'\x3E',
             'xip_read_finish' : b'\x61',
+            'efuse_read_mac_addr' : b'\x42',
         }
+
+    @staticmethod
+    def rx_callback_handler(data):
+        rx_queue.put(data)
+
+    def get_response(self):
+        return rx_queue.get()
 
     @staticmethod
     def is_response_ok(response):
@@ -43,17 +56,20 @@ class BLProtocol:
         """
 
         logging.debug(f"Response: {response}")
-        if response is None or len(response) < 2:
-            raise bl_errors.InvalidResponseError()
+        #if response is None or len(response) < 2:
+            #raise bl_errors.InvalidResponseError()
 
         if response[0:2] == b'OK':
             result = True
 
-        if response[0:2] == b'FL':
+        elif response[0:2] == b'FL':
             err_lsb = response[2]
             err_msb = response[3]
             logging.debug(f"err_msb: {err_msb}, err_lsb {err_lsb}")
             raise bl_errors.errors_agregator[err_msb][err_lsb - 1]()
+
+        else:
+            raise bl_errors.InvalidResponseError()
 
         return result
 
@@ -68,7 +84,7 @@ class BLProtocol:
             int: Calculated checksum.
         """
 
-        logging.info("Checksum calculation")
+        logging.debug("Checksum calculation")
         sum = 0
         for e in data:
             sum = sum + e
@@ -88,8 +104,7 @@ class BLProtocol:
             bytearray: Data received from UART.
         """
         self.interface.send_data(data)
-        time.sleep(timeout)
-        return self.interface.wait_for_response()
+        return self.get_response()
 
     def handshake(self):
         """Perform handshake with MCU's bootloader.
@@ -97,9 +112,10 @@ class BLProtocol:
         Returns:
             bool: True if operation was succesful.
         """
-        logging.info("Perform handshake")
+
+        logging.debug("Handshake")
         command = (self.cmd_id['handshake']
-                   * int(0.006 * (self.interface.uart.baudrate / 10)))
+                   * int(0.005 * (self.interface.uart.baudrate / 10)))
         response = self.send_data_wait_for_response(command)
         return self.is_response_ok(response)
 
@@ -110,7 +126,7 @@ class BLProtocol:
             bytearray: MCU's response
         """
 
-        logging.info("GetBootInfo command")
+        logging.debug("GetBootInfo command")
         command = self.cmd_id['get_boot_info'] + b'\x00\x00\x00'
         response = self.send_data_wait_for_response(command)
         if self.is_response_ok(response):
@@ -129,7 +145,7 @@ class BLProtocol:
             TODO
         """
 
-        logging.info("LoadBootHeader command")
+        logging.debug("LoadBootHeader command")
         # boot_header is always 176 bytes long
         if len(boot_header) != 176:
             raise bl_errors.InvalidResponseError()
@@ -152,7 +168,7 @@ class BLProtocol:
             TODO
         """
 
-        logging.info("LoadSegmentHeader command")
+        logging.debug("LoadSegmentHeader command")
         # Segment_header is always 16 bytes long
         if len(segment_header) != 16 :
             raise bl_errors.InvalidResponseError()
@@ -176,7 +192,7 @@ class BLProtocol:
             TODO
         """
 
-        logging.info("LoadSegmentData command")
+        logging.debug("LoadSegmentData command")
         dlen = len(segment_data)
         if dlen > 4096:
             raise ValueError("Segment_data can't be longer than 4096 bytes")
@@ -192,7 +208,7 @@ class BLProtocol:
             bool: True if operation was succesful.
         """
 
-        logging.info("CheckImage command")
+        logging.debug("CheckImage command")
         command = self.cmd_id['check_image'] + b'\x00\x00\x00'
         response = self.send_data_wait_for_response(command)
         return self.is_response_ok(response)
@@ -203,7 +219,7 @@ class BLProtocol:
         Args:
             unknown (bytearray): IDK what is it (?).
         """
-        logging.info("MemoryWrite command")
+        logging.debug("MemoryWrite command")
         command = self.cmd_id['mem_write'] + b'\x00\x08\x00' + unknown
         self.interface.send_data(command)
         #response = self.send_data_wait_for_response(command)
@@ -216,7 +232,7 @@ class BLProtocol:
             bytearray: MCU's response.
         """
 
-        logging.info("ReadJedecId command")
+        logging.debug("ReadJedecId command")
         command = self.cmd_id['read_jedecid'] + b'\x00\x00\x00'
         response = self.send_data_wait_for_response(command)
         if self.is_response_ok(response):
@@ -233,17 +249,20 @@ class BLProtocol:
             bool: True if operation was succesful.
         """
 
-        logging.info("FlashErase command")
+        logging.debug("FlashErase command")
         data = (b'\x08\x00'
                 + start_addr.to_bytes(4, 'little')
                 + end_addr.to_bytes(4, 'little'))
         checksum = self.calc_checksum(data)
         command = (self.cmd_id['flash_erase']
                    + checksum.to_bytes(1, 'little') + data)
-        #This operation take some time to confirm success,
-        #so delay is a bit higher
-        response = self.send_data_wait_for_response(command, 5)
-        return self.is_response_ok(response)
+        response = self.send_data_wait_for_response(command, 1)
+        while True:
+            response = self.get_response()
+            if response[0:2] == b'PD':
+                print("Pending...")
+            if response[0:2] == b'OK':
+                return True
 
     def flash_write(self, start_addr, payload):
         """Write MCU's flash memory region with given payload.
@@ -259,7 +278,7 @@ class BLProtocol:
 
         """
 
-        logging.info("FlashWrite command")
+        logging.debug("FlashWrite command")
         dlen = len(payload)
         if dlen > 8000:
             raise ValueError("Payload can't be longer than 8000 bytes")
@@ -279,41 +298,49 @@ class BLProtocol:
             bool: True if operation was succesful.
         """
 
-        logging.info("FlashWriteCheck command")
+        logging.debug("FlashWriteCheck command")
         command = self.cmd_id['flash_write_check'] + b'\x00\x00\x00'
         response = self.send_data_wait_for_response(command)
         return self.is_response_ok(response)
 
     def xip_read_start(self):
 
-        logging.info("XipReadStart command")
+        logging.debug("XipReadStart command")
         command = self.cmd_id['xip_read_start'] + b'\x00\x00\x00'
         response = self.send_data_wait_for_response(command)
         return self.is_response_ok(response)
 
     def flash_xip_readsha(self, unknown):
-        logging.info("XipReadSha command")
+        logging.debug("XipReadSha command")
         command = self.cmd_id['flash_xip_readsha'] + unknown
         response = self.send_data_wait_for_response(command)
         if self.is_response_ok(response):
             return response[2:]
 
     def xip_read_finish(self):
-        logging.info("XipReadFinish command")
+        logging.debug("XipReadFinish command")
         command = self.cmd_id['xip_read_finish'] + b'\x00\x00\x00'
         response = self.send_data_wait_for_response(command)
+        return self.is_response_ok(response)
 
     def load_full_data(self, file):
-        logging.info("LoadFullData Procedure")
+        logging.debug("LoadFullData Procedure")
         data = file.read(4080)
         while len(data) > 0:
             self.load_segment_data(data)
             data = file.read(4080)
 
     def flash_write_all(self, start_addr, file):
-        logging.info("FlashWriteFull Procedure")
+        logging.debug("FlashWriteFull Procedure")
         data = file.read(2048)
         while len(data) > 0:
             self.flash_write(start_addr, data)
             start_addr = start_addr + len(data)
             data = file.read(2048)
+
+    def efuse_read_mac_addr(self):
+        logging.debug("EfuseReadMacAddr command")
+        command = self.cmd_id['efuse_read_mac_addr'] + b'\x00\x00\x00'
+        response = self.send_data_wait_for_response(command)
+        if self.is_response_ok(response):
+            return response[2:]

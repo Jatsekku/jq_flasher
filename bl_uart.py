@@ -1,6 +1,8 @@
 import serial
+import queue
 import time
 import logging
+import threading
 
 class BLUart:
     def __init__(self,
@@ -30,6 +32,8 @@ class BLUart:
             'DTR' : self.uart.setDTR
         }
 
+        self.__rx_thread_start()
+
     def send_data(self, data):
         """Send data over UART.
 
@@ -37,28 +41,21 @@ class BLUart:
             data (bytearray): Data to sent.
         """
 
-        logging.debug(f"Data length {len(data)} , Data to send: {data}")
         self.uart.write(data)
 
-    def wait_for_response(self, timeout=2):
-        """Wait for incoming data on UART interface.
+    def __rx_thread(self):
+        while self.uart.is_open:
+            time.sleep(0.02)
+            len = self.uart.in_waiting
+            if len > 0 and self.rx_callback is not None:
+                self.rx_callback(self.uart.read(len))
 
-        Args:
-            timeout (float): Max waiting time for data, given in seconds.
+    def __rx_thread_start(self):
+        self.rx_thread = threading.Thread(target = self.__rx_thread)
+        self.rx_thread.start()
 
-        Returns:
-            bytearray: Data received from UART.
-        """
-
-        logging.debug(f"Timeout: {timeout}")
-        self.uart.timeout = timeout
-        len = self.uart.in_waiting
-        logging.debug(f"Waiting data amount = {len}")
-        if len == 0:
-            len = 1
-        data = self.uart.read(len)
-        logging.debug(f"Received data: {data}")
-        return data
+    def register_rx_callback(self, rx_callback):
+        self.rx_callback = rx_callback
 
     def en_pin_set(self, state):
         """Put ENABLE pin into given state.
@@ -91,11 +88,12 @@ class BLUart:
 
         logging.info("Entering bootloader.")
         self.boot_pin_set(True)
-        self.en_pin_set(True)
-        time.sleep(1)
-
-        self.en_pin_set(False)
         time.sleep(0.5)
-        self.en_pin_set(True)
+        self.reset()
+        time.sleep(0.5)
+        self.boot_pin_set(False)
 
+    def reset(self):
+        self.en_pin_set(False)
         time.sleep(1)
+        self.en_pin_set(True)
