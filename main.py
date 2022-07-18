@@ -50,7 +50,7 @@ def main():
     img_path = '/home/jatsekku/Documents/bl_mcu_sdk/out/examples/ble/ble_peripheral/ble_peripheral_bl702.bin'
     bin_size = os.path.getsize(img_path)
 
-    bootinfo = BootInfo('/home/jatsekku/Documents/jq_flasher/utils/bootinfo.cfg')
+    bootinfo = BootInfo('/home/jatsekku/Documents/jq_flasher/constants/bootinfo.cfg')
     bootinfo.set_img_len(bin_size)
 
     bl_flasher.flash_img_bootheader(bootinfo.get_bytes())
