@@ -32,6 +32,8 @@ class ArgsParser:
 
         self.parser.add_argument('--firmware',
                                  help = 'image to write onto MCU')
+        
+        self.parser.add_argument('--debug', action = 'store_true', default=False, help='enable debug mode')
 
         # Helper function to automatically detect int base
         def auto_int(x):

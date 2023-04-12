@@ -1,24 +1,32 @@
 import os
 import logging
 import time
+import signal
 
 from bl_uart import BLUart
 from bl_protocol import BLProtocol
 from args_parser import ArgsParser
 from bl_flasher import BLFlasher
 from bootinfo import BootInfo
+    
 
 def config_logging(level = logging.DEBUG):
     format = '%(levelname)s | %(asctime)s | %(filename)s:%(lineno)s' \
              '| %(funcName)s() | %(message)s'
-    logging.basicConfig(format = format,
-                        level = level)
+    logging.basicConfig(
+        format=format,
+        level = level)
 
 def main():
-    config_logging(logging.DEBUG)
+
 
     args_parser = ArgsParser()
     args = args_parser.parse_args()
+    
+    if args.debug:
+        config_logging(logging.DEBUG)
+    else:
+        config_logging(logging.INFO)
 
     bl_uart = BLUart(port = args.port,
                      baudrate = args.baudrate,
@@ -27,6 +35,7 @@ def main():
 
     bl_proto = BLProtocol(bl_uart)
     bl_flasher = BLFlasher(bl_uart)
+
 
     bl_flasher.connect(2)
     #Get bootinfo
@@ -80,6 +89,11 @@ def main():
 
     #XipReadStart
     bl_proto.xip_read_finish()
+    
+    logging.info("Flashing finished, Please reset the device")
+    
+    bl_uart.close()
+    exit(0)
 
 
 main()

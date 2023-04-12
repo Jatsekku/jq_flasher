@@ -26,6 +26,7 @@ class BLUart:
         self.boot_pin_inverted = boot_pin_inverted
         self.en_pin = en_pin
         self.en_pin_inverted = en_pin_inverted
+        self.stop_rx_thread = True
 
         self.pin_switcher = {
             'RTS' : self.uart.setRTS,
@@ -49,10 +50,17 @@ class BLUart:
             len = self.uart.in_waiting
             if len > 0 and self.rx_callback is not None:
                 self.rx_callback(self.uart.read(len))
+            if self.stop_rx_thread:
+                break   
 
     def __rx_thread_start(self):
         self.rx_thread = threading.Thread(target = self.__rx_thread)
+        self.stop_rx_thread = False
         self.rx_thread.start()
+    
+    def __rx_thread_stop(self):
+        self.stop_rx_thread = True
+        self.rx_thread.join()
 
     def register_rx_callback(self, rx_callback):
         self.rx_callback = rx_callback
@@ -97,3 +105,7 @@ class BLUart:
         self.en_pin_set(False)
         time.sleep(1)
         self.en_pin_set(True)
+
+    def close(self):
+        self.__rx_thread_stop()
+        self.uart.close()
